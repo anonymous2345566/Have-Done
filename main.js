@@ -1,5 +1,5 @@
 // Klaar — Electron main process
-const { app, BrowserWindow, ipcMain, shell, Menu, nativeTheme } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, Menu, nativeTheme, session } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
@@ -69,15 +69,15 @@ function createWindow() {
 
   // Open external links in the default browser, never inside the app
   win.webContents.setWindowOpenHandler(({ url }) => {
-    if (/^https?:/i.test(url)) shell.openExternal(url);
+    if (/^https:\/\//i.test(url)) shell.openExternal(url);
     return { action: 'deny' };
   });
+  // The app never navigates away from its own page
   win.webContents.on('will-navigate', (e, url) => {
-    if (!url.startsWith('file://')) {
-      e.preventDefault();
-      if (/^https?:/i.test(url)) shell.openExternal(url);
-    }
+    e.preventDefault();
+    if (/^https:\/\//i.test(url)) shell.openExternal(url);
   });
+  win.webContents.on('will-attach-webview', (e) => e.preventDefault());
 
   const saveState = () => {
     if (!win || win.isDestroyed()) return;
@@ -91,8 +91,18 @@ function createWindow() {
 }
 
 // ---- IPC: storage ----
-ipcMain.handle('data:load', () => readJSON(DATA_FILE(), null));
-ipcMain.handle('data:save', (_e, data) => {
+ipcMain.handle('data:load', (e) => (fromApp(e) ? readJSON(DATA_FILE(), null) : null));
+// Only accept IPC from our own page
+const fromApp = (e) => {
+  try {
+    return new URL(e.senderFrame.url).protocol === 'file:';
+  } catch {
+    return false;
+  }
+};
+ipcMain.handle('data:save', (e, data) => {
+  if (!fromApp(e)) return false;
+  if (!data || typeof data !== 'object' || !Array.isArray(data.tasks) || !Array.isArray(data.lists)) return false;
   writeJSONAtomic(DATA_FILE(), data);
   return true;
 });
@@ -131,6 +141,9 @@ function buildMenu() {
 }
 
 app.whenReady().then(() => {
+  // Only notifications are allowed; camera, microphone, location etc. are always denied
+  session.defaultSession.setPermissionRequestHandler((_wc, permission, cb) => cb(permission === 'notifications'));
+  session.defaultSession.setPermissionCheckHandler((_wc, permission) => permission === 'notifications');
   buildMenu();
   createWindow();
   app.on('activate', () => {

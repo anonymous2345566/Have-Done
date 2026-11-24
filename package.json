@@ -1,7 +1,7 @@
 {
   "name": "klaar",
   "productName": "Klaar",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Klaar — een snelle, offline takenapp geïnspireerd op Microsoft To Do. Mijn dag, slimme lijsten, stappen, herinneringen en herhalende taken.",
   "main": "main.js",
   "author": "Zijlstra",
@@ -16,8 +16,8 @@
     "test": "node --test test/repeat.test.js"
   },
   "devDependencies": {
-    "electron": "^33.2.0",
-    "electron-builder": "^25.1.8"
+    "electron": "^45.4.1",
+    "electron-builder": "^26.18.0"
   },
   "build": {
     "appId": "nl.zijlstra.klaar",
@@ -82,7 +82,15 @@
       "maintainer": "Klaar",
       "artifactName": "Klaar-${version}-${arch}.${ext}"
     },
-    "publish": null
+    "publish": null,
+    "electronFuses": {
+      "runAsNode": false,
+      "enableCookieEncryption": true,
+      "enableNodeOptionsEnvironmentVariable": false,
+      "enableNodeCliInspectArguments": false,
+      "enableEmbeddedAsarIntegrityValidation": true,
+      "onlyLoadAppFromAsar": true
+    }
   },
   "repository": {
     "type": "git",

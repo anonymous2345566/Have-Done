@@ -80,12 +80,67 @@
     d.lists = Array.isArray(d.lists) ? d.lists : base.lists;
     if (!d.lists.find((l) => l.id === 'inbox')) d.lists.unshift(base.lists[0]);
     d.tasks = Array.isArray(d.tasks) ? d.tasks : [];
-    d.tasks.forEach((t) => {
-      t.steps = Array.isArray(t.steps) ? t.steps : [];
-      t.categories = Array.isArray(t.categories) ? t.categories : [];
-      t.note = t.note || '';
-      if (!d.lists.find((l) => l.id === t.listId)) t.listId = 'inbox';
+    const str = (v, max = 5000) => (typeof v === 'string' ? v.slice(0, max) : '');
+    const dateKey = (v) => (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : null);
+    const iso = (v) => (typeof v === 'string' && !isNaN(Date.parse(v)) ? v : null);
+    const catIds = CATEGORIES.map((c) => c.id);
+    const okTheme = (v) => (THEMES.includes(v) ? v : 'blue');
+    const okSort = (v) => (v && typeof v === 'object' && ['importance', 'due', 'alpha', 'created', 'myday'].includes(v.by)
+      ? { by: v.by, dir: v.dir === 'desc' ? 'desc' : 'asc' } : null);
+
+    d.groups = d.groups.filter((g) => g && typeof g === 'object' && typeof g.id === 'string')
+      .map((g) => ({ id: g.id, name: str(g.name, 200) || '…', collapsed: !!g.collapsed }));
+    d.lists = d.lists.filter((l) => l && typeof l === 'object' && typeof l.id === 'string').map((l, i) => ({
+      id: l.id,
+      name: l.id === 'inbox' ? null : str(l.name, 200),
+      emoji: str(l.emoji, 8),
+      theme: okTheme(l.theme),
+      groupId: typeof l.groupId === 'string' ? l.groupId : null,
+      order: Number.isFinite(l.order) ? l.order : i,
+      sort: okSort(l.sort),
+      showCompleted: l.showCompleted !== false,
+      createdAt: iso(l.createdAt) || new Date().toISOString()
+    }));
+    if (!d.lists.find((l) => l.id === 'inbox')) d.lists.unshift(base.lists[0]);
+    Object.keys(base.smart).forEach((k) => {
+      const v = d.smart[k] && typeof d.smart[k] === 'object' ? d.smart[k] : base.smart[k];
+      d.smart[k] = { theme: THEMES.includes(v.theme) ? v.theme : base.smart[k].theme, sort: okSort(v.sort), showCompleted: v.showCompleted !== false };
     });
+    d.tasks = d.tasks.filter((t) => t && typeof t === 'object' && typeof t.id === 'string').map((t, i) => {
+      const rep = t.repeat && typeof t.repeat === 'object' && ['daily', 'weekdays', 'weekly', 'monthly', 'yearly'].includes(t.repeat.freq)
+        ? {
+            freq: t.repeat.freq,
+            interval: Math.min(99, Math.max(1, parseInt(t.repeat.interval, 10) || 1)),
+            days: Array.isArray(t.repeat.days) ? t.repeat.days.filter((x) => Number.isInteger(x) && x >= 0 && x <= 6) : undefined
+          }
+        : null;
+      return {
+        id: t.id,
+        listId: d.lists.find((l) => l.id === t.listId) ? t.listId : 'inbox',
+        title: str(t.title, 1000) || '…',
+        done: !!t.done,
+        doneAt: iso(t.doneAt),
+        important: !!t.important,
+        myDay: dateKey(t.myDay),
+        lastMyDay: dateKey(t.lastMyDay),
+        due: dateKey(t.due),
+        reminder: iso(t.reminder),
+        reminded: !!t.reminded,
+        repeat: rep,
+        steps: (Array.isArray(t.steps) ? t.steps : [])
+          .filter((s) => s && typeof s === 'object')
+          .map((s) => ({ id: typeof s.id === 'string' ? s.id : uid(), title: str(s.title, 1000) || '…', done: !!s.done })),
+        note: str(t.note, 100000),
+        categories: (Array.isArray(t.categories) ? t.categories : []).filter((c) => catIds.includes(c)),
+        createdAt: iso(t.createdAt) || new Date().toISOString(),
+        order: Number.isFinite(t.order) ? t.order : i
+      };
+    });
+    const s = d.settings;
+    if (!['system', 'light', 'dark'].includes(s.theme)) s.theme = 'system';
+    if (!['nl', 'en'].includes(s.lang)) s.lang = 'nl';
+    s.categoryNames = s.categoryNames && typeof s.categoryNames === 'object' ? Object.fromEntries(
+      Object.entries(s.categoryNames).filter(([k, v]) => catIds.includes(k) && typeof v === 'string').map(([k, v]) => [k, v.slice(0, 100)])) : {};
     return d;
   }
 
