@@ -1,0 +1,91 @@
+{
+  "name": "klaar",
+  "productName": "Klaar",
+  "version": "1.0.0",
+  "description": "Klaar — een snelle, offline takenapp geïnspireerd op Microsoft To Do. Mijn dag, slimme lijsten, stappen, herinneringen en herhalende taken.",
+  "main": "main.js",
+  "author": "Zijlstra",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "web": "npx --yes serve src -l 5173",
+    "dist": "electron-builder --publish never",
+    "dist:win": "electron-builder --win --publish never",
+    "dist:mac": "electron-builder --mac --publish never",
+    "dist:linux": "electron-builder --linux --publish never",
+    "test": "node --test test/repeat.test.js"
+  },
+  "devDependencies": {
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "nl.zijlstra.klaar",
+    "productName": "Klaar",
+    "copyright": "MIT License",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "src/**/*",
+      "build/icon.png"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "artifactName": "Klaar-Setup-${version}.${ext}"
+    },
+    "portable": {
+      "artifactName": "Klaar-Portable-${version}.${ext}"
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ],
+      "category": "public.app-category.productivity",
+      "icon": "build/icon.png",
+      "artifactName": "Klaar-${version}-${arch}.${ext}"
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Office",
+      "icon": "build/icon.png",
+      "maintainer": "Klaar",
+      "artifactName": "Klaar-${version}-${arch}.${ext}"
+    },
+    "publish": null
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/JOUW-GEBRUIKERSNAAM/klaar.git"
+  }
+}
