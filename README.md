@@ -58,15 +58,15 @@ Ga naar [**Releases**](../../releases/latest) en download het bestand voor jouw 
 
 ### In de browser
 
-Klaar werkt ook als website (je taken worden dan in je browser bewaard). Na het aanzetten van GitHub Pages (zie hieronder) staat hij op `https://JOUW-GEBRUIKERSNAAM.github.io/klaar/`.
+Klaar werkt ook als website (je taken worden dan in je browser bewaard). Na het aanzetten van GitHub Pages (zie hieronder) staat hij op `https://anonymous2345566.github.io/Have-Done/`.
 
 ## Zelf bouwen vanaf de broncode
 
 Je hebt [Node.js](https://nodejs.org) 18 of nieuwer en Git nodig.
 
 ```bash
-git clone https://github.com/JOUW-GEBRUIKERSNAAM/klaar.git
-cd klaar
+git clone https://github.com/anonymous2345566/Have-Done.git
+cd Have-Done
 npm install
 npm start          # app starten
 ```
