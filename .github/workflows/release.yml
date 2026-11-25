@@ -30,6 +30,18 @@ jobs:
           node-version: 20
           cache: npm
 
+      - name: Microsoft Client ID invullen (repo-variabele MS_CLIENT_ID)
+        if: ${{ vars.MS_CLIENT_ID != '' }}
+        shell: bash
+        env:
+          MS_CLIENT_ID: ${{ vars.MS_CLIENT_ID }}
+        run: |
+          if [[ "$MS_CLIENT_ID" =~ ^[0-9a-fA-F-]{36}$ ]]; then
+            sed -i.bak "s/msClientId: ''/msClientId: '$MS_CLIENT_ID'/" src/config.js && rm -f src/config.js.bak
+            echo "Client ID ingevuld"
+          else
+            echo "::warning::MS_CLIENT_ID is geen geldige GUID en is overgeslagen"
+          fi
       - name: Install
         run: npm ci
 
@@ -56,6 +68,8 @@ jobs:
             dist/*.dmg
             dist/*.AppImage
             dist/*.deb
+            dist/*.blockmap
+            dist/latest*.yml
 
   release:
     name: GitHub Release
@@ -83,5 +97,7 @@ jobs:
             | macOS (Apple Silicon) | `Klaar-*-arm64.dmg` |
             | macOS (Intel) | `Klaar-*-x64.dmg` |
             | Linux | `Klaar-*.AppImage` of `.deb` |
+
+            De bestanden `latest*.yml` en `*.blockmap` zijn voor automatische updates; die hoef je niet te downloaden.
 
             Zie de README voor installatietips (Windows SmartScreen / macOS Gatekeeper).

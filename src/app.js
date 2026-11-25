@@ -8,6 +8,7 @@
     { id: 'myday', icon: 'sun' },
     { id: 'important', icon: 'star' },
     { id: 'planned', icon: 'calendar' },
+    { id: 'assigned', icon: 'user' },
     { id: 'all', icon: 'infinity' },
     { id: 'completed', icon: 'checkCircle' }
   ];
@@ -24,8 +25,11 @@
     focusStep: false,
     dragTask: null,
     dragList: null,
-    renamingList: false
+    renamingList: false,
+    update: null
   };
+  const MSX = () => window.MS;
+  const msOn = () => !!(window.MS && MS.state.account);
 
   const $sidebar = document.getElementById('sidebar');
   const $main = document.getElementById('main');
@@ -148,12 +152,14 @@
           case 'planned': return all.filter((x) => x.due || x.reminder);
           case 'all': return all.slice();
           case 'completed': return all.filter((x) => x.done);
+          case 'assigned': return [];
           default: return [];
         }
     }
   }
 
   function countOpen(view) {
+    if (view.type === 'smart' && view.id === 'assigned') return (MS.state.planner || []).length;
     if (view.type === 'smart' && view.id === 'completed') return Store.data.tasks.filter((x) => x.done).length;
     return tasksForView(view).filter((x) => !x.done).length;
   }
@@ -201,6 +207,16 @@
     renderDetails();
   }
 
+  // Re-render without disturbing what the user is typing (used for background sync)
+  function softRender() {
+    const ae = document.activeElement;
+    const typing = ae && /^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName);
+    applyTheme();
+    renderSidebar();
+    if (!(typing && $main.contains(ae))) renderMain();
+    if (!(typing && $details.contains(ae))) renderDetails();
+  }
+
   // ---------------- Sidebar ----------------
   function renderSidebar() {
     const active = (v) => v.type === ui.view.type && v.id === ui.view.id;
@@ -232,7 +248,9 @@
 
     // smart lists
     SMART.forEach((s) => {
-      if (s.id !== 'myday' && !S().smartLists[s.id]) return;
+      if (s.id === 'assigned') {
+        if (!(MS.state.planner && S().msPlanner)) return;
+      } else if (s.id !== 'myday' && !S().smartLists[s.id]) return;
       nav.append(item({ type: 'smart', id: s.id }, s.icon, t(s.id), { theme: Store.data.smart[s.id].theme }));
     });
     const inbox = Store.list('inbox');
@@ -349,7 +367,8 @@
           onclick: () => toggleSidebar(false)
         })
       ),
-      h('label', { class: 'search' }, icon('search'), searchInput)
+      h('label', { class: 'search' }, icon('search'), searchInput),
+      ui.update ? h('button', { class: 'update-banner', onclick: () => native.updates.install() }, icon('download'), t('updateReady', { v: ui.update === 'new' ? '' : ui.update }), h('strong', null, t('restartNow'))) : null
     );
 
     const newListInput = h('input', {
@@ -368,6 +387,7 @@
       'div',
       { class: 'sidebar-foot' },
       h('label', { class: 'new-list' }, icon('plus'), newListInput),
+      msOn() ? syncButton() : null,
       h('button', {
         class: 'icon-btn',
         title: t('newGroup'),
@@ -393,6 +413,30 @@
       searchInput.focus();
       try { searchInput.setSelectionRange(pos, pos); } catch { /* ignore */ }
     }
+  }
+
+  function syncButton() {
+    const st = MS.state;
+    const err = st.needLogin || (st.error && S().msSync);
+    const last = Store.data.sync.lastSync;
+    const title = st.syncing ? t('syncing')
+      : st.needLogin ? t('msLoginAgain')
+      : st.error ? t('syncError', { msg: st.error })
+      : last ? t('lastSynced', { when: new Date(last).toLocaleTimeString(locale(), { hour: '2-digit', minute: '2-digit' }) })
+      : t('msConnected');
+    return h('button', {
+      class: `icon-btn sync-btn${st.syncing ? ' spinning' : ''}${err ? ' err' : ''}`,
+      title,
+      'aria-label': title,
+      html: window.ICONS.cloud,
+      onclick: (e) => menu(e.currentTarget, [
+        { node: h('div', { class: 'menu-note' }, h('strong', null, st.account.name), h('span', null, st.account.username), h('span', { class: err ? 'err-text' : '' }, title)) },
+        'sep',
+        st.needLogin && { icon: 'user', label: t('msLoginAgain'), onClick: () => msLogin() },
+        S().msSync && !st.needLogin && { icon: 'refresh', label: t('syncNow'), onClick: () => MS.syncNow() },
+        { icon: 'settings', label: t('msSettings'), onClick: () => openSettings('microsoft') }
+      ])
+    });
   }
 
   function renderSidebarActive() {
@@ -437,7 +481,7 @@
   }
 
   function listMenu(at, l) {
-    const isInbox = l.id === 'inbox';
+    const isInbox = l.id === 'inbox' || l.wellKnown === 'flaggedEmails';
     menu(at, [
       !isInbox && { icon: 'edit', label: t('renameList'), onClick: () => { go({ type: 'list', id: l.id }); startRename(); } },
       { icon: 'palette', label: t('theme'), submenu: themeItems((theme) => Store.updateList(l.id, { theme }), l.theme) },
@@ -591,8 +635,14 @@
       );
     }
 
+    const isAssigned = ui.view.type === 'smart' && ui.view.id === 'assigned';
+    if (isAssigned) {
+      tools.querySelectorAll('.tool-btn').forEach((b) => b.remove());
+      tools.append(h('button', { class: 'tool-btn', onclick: () => MS.loadPlanner() }, icon('refresh'), h('span', null, t('refresh'))));
+    }
+
     // ----- add task -----
-    const addBar = isCompletedView ? null : renderAddBar();
+    const addBar = isCompletedView || isAssigned ? null : renderAddBar();
 
     // ----- tasks -----
     const tasks = tasksForView();
@@ -622,9 +672,15 @@
       if (isOpen) done.forEach((x) => listBox.append(taskRow(x)));
     }
 
-    const empty = !tasks.length || (isCompletedView && !done.length) ? emptyState() : null;
+    let empty = !tasks.length || (isCompletedView && !done.length) ? emptyState() : null;
+    if (isAssigned) {
+      const items = MS.state.planner || [];
+      items.slice().sort((a, b) => (a.due || '9999').localeCompare(b.due || '9999')).forEach((x) => listBox.append(plannerRow(x)));
+      empty = items.length ? null : emptyState();
+    }
+    const agenda = isMyDay ? renderAgenda() : null;
 
-    const scroller = h('div', { class: 'main-scroll' }, sortChip, listBox, empty);
+    const scroller = h('div', { class: 'main-scroll' }, sortChip, agenda, listBox, empty);
     const content = h('div', { class: 'main-content' }, header, scroller, addBar);
     const children = [content];
     if (isMyDay && ui.suggestionsOpen) children.push(renderSuggestions());
@@ -639,6 +695,49 @@
       const inp = $main.querySelector('.title-input');
       if (inp) { inp.focus(); inp.select(); }
     }
+  }
+
+  function renderAgenda() {
+    const events = MS.state.calendar;
+    if (!msOn() || !S().msCalendar || !events || !events.length) return null;
+    const key = 'agenda';
+    const isOpen = ui.completedOpen[key] !== false;
+    const time = (d) => d.toLocaleTimeString(locale(), { hour: '2-digit', minute: '2-digit' });
+    const now = Date.now();
+    return h('div', { class: 'agenda' },
+      sectionHead(t('agendaToday'), events.length, isOpen, () => { ui.completedOpen[key] = !isOpen; renderMain(); }),
+      isOpen ? h('div', { class: 'agenda-list' }, events.map((ev) => h(ev.link ? 'a' : 'div', {
+        class: `event${ev.end && ev.end.getTime() < now ? ' past' : ''}${ev.start && ev.start.getTime() <= now && ev.end && ev.end.getTime() > now ? ' now' : ''}${ev.free ? ' free' : ''}`,
+        href: ev.link || null,
+        target: ev.link ? '_blank' : null,
+        rel: 'noopener',
+        title: ev.link ? t('openInOutlook') : null
+      },
+      h('span', { class: 'event-time' }, ev.allDay ? t('allDay') : `${time(ev.start)} – ${time(ev.end)}`),
+      h('span', { class: 'event-title' }, ev.title),
+      ev.location ? h('span', { class: 'event-loc' }, ev.location) : null))) : null);
+  }
+
+  function plannerRow(x) {
+    const overdue = x.due && x.due < todayKey();
+    return h('div', { class: 'task planner-task', role: 'listitem' },
+      h('button', {
+        class: 'check',
+        role: 'checkbox',
+        'aria-checked': 'false',
+        title: t('markDone'),
+        onclick: async (e) => {
+          e.currentTarget.closest('.task').classList.add('completing');
+          if (S().playSound) ding();
+          try { await MS.completePlanner(x); } catch (err) { toast(t('plannerFailed')); MS.loadPlanner(); }
+        }
+      }, icon('check')),
+      h('div', { class: 'task-body' },
+        h('div', { class: 'task-title' }, x.title),
+        h('div', { class: 'task-meta' },
+          h('span', { class: 'meta-item' }, icon('group'), MS.state.plans[x.planId] || 'Planner'),
+          x.due ? h('span', { class: `meta-item${overdue ? ' overdue' : ''}` }, icon('calendar'), relDate(x.due)) : null,
+          x.progress > 0 ? h('span', { class: 'meta-item' }, t('inProgress')) : null)));
   }
 
   function startRename() {
@@ -678,6 +777,7 @@
     else if (v.id === 'important') { ic = 'star'; title = t('emptyImportant'); sub = t('emptyImportantSub'); }
     else if (v.id === 'planned') { ic = 'calendar'; title = t('emptyPlanned'); sub = t('emptyPlannedSub'); }
     else if (v.id === 'completed') { title = t('emptyCompleted'); sub = t('emptyCompletedSub'); }
+    else if (v.id === 'assigned') { ic = 'user'; title = t('emptyAssigned'); sub = t('emptyAssignedSub'); }
     return h('div', { class: 'empty' }, h('div', { class: 'empty-icon' }, icon(ic)), h('h3', null, title), h('p', null, sub));
   }
 
@@ -688,7 +788,7 @@
       placeholder: t('addTask'),
       'aria-label': t('addTask'),
       value: d.title || '',
-      oninput: (e) => { d.title = e.target.value; },
+      oninput: (e) => { d.title = e.target.value; renderNlpPreview(); },
       onkeydown: (e) => {
         if (e.key === 'Enter') createFromDraft();
         if (e.key === 'Escape') { ui.draft = {}; e.target.value = ''; e.target.blur(); renderMain(); }
@@ -705,21 +805,62 @@
       h('button', { class: 'add-btn', onclick: createFromDraft, onmousedown: (e) => e.preventDefault() }, t('add'))
     );
 
-    return h('div', { class: `add-bar${d.title || d.due || d.reminder || d.repeat ? ' active' : ''}` },
+    const bar = h('div', { class: `add-bar${d.title || d.due || d.reminder || d.repeat ? ' active' : ''}` },
       h('div', { class: 'add-row' }, h('span', { class: 'add-plus', html: window.ICONS.plus }), input),
+      h('div', { class: 'nlp-chips' }),
       opts);
+    setTimeout(renderNlpPreview);
+    return bar;
+  }
+
+  function parseSmart(text) {
+    if (!S().smartInput || !window.KlaarNLP) return { title: text, tokens: [] };
+    return window.KlaarNLP.parse(text, {
+      lists: Store.sortedLists().map((l) => ({ id: l.id, name: listName(l) })),
+      categoryNames: Object.fromEntries(CATEGORIES.map((c) => [c.id, catName(c.id)]))
+    });
+  }
+
+  function tokenLabel(tk) {
+    switch (tk.type) {
+      case 'due': return [icon('calendar'), relDate(tk.value)];
+      case 'reminder': return [icon('bell'), fmtReminder(tk.value)];
+      case 'repeat': return [icon('repeat'), repeatLabel(tk.value)];
+      case 'important': return [icon('starFilled'), t('important')];
+      case 'myday': return [icon('sun'), t('myday')];
+      case 'category': return [h('span', { class: 'cat-dot', style: { '--cat': (CATEGORIES.find((c) => c.id === tk.value) || {}).color } }), catName(tk.value)];
+      case 'list': return [icon('list'), tk.label];
+      default: return [];
+    }
+  }
+
+  function renderNlpPreview() {
+    const box = $main.querySelector('.nlp-chips');
+    if (!box) return;
+    const r = parseSmart(ui.draft.title || '');
+    box.replaceChildren(...r.tokens.map((tk) => h('span', { class: 'nlp-chip' }, tokenLabel(tk))));
+    box.classList.toggle('show', r.tokens.length > 0);
   }
 
   function createFromDraft() {
     const d = ui.draft;
-    const title = (d.title || '').trim();
-    if (!title) return;
+    const raw = (d.title || '').trim();
+    if (!raw) return;
+    const parsed = parseSmart(raw);
+    const title = parsed.title || raw;
     const fields = { title };
+    if (parsed.due) fields.due = parsed.due;
+    if (parsed.reminder) fields.reminder = parsed.reminder;
+    if (parsed.repeat) fields.repeat = parsed.repeat;
+    if (parsed.important) fields.important = true;
+    if (parsed.myDay) fields.myDay = todayKey();
+    if (parsed.categories) fields.categories = parsed.categories;
+    if (parsed.listId) fields.listId = parsed.listId;
     if (d.due) fields.due = d.due;
     if (d.reminder) fields.reminder = d.reminder;
     if (d.repeat) fields.repeat = d.repeat;
     const v = ui.view;
-    if (v.type === 'list') fields.listId = v.id;
+    if (v.type === 'list' && !fields.listId) fields.listId = v.id;
     else if (v.id === 'myday') fields.myDay = todayKey();
     else if (v.id === 'important') fields.important = true;
     else if (v.id === 'planned' && !fields.due) fields.due = todayKey();
@@ -1124,6 +1265,26 @@
         () => Store.updateTask(task.id, { repeat: null })));
     if (isOverdue(task)) card3.querySelectorAll('.d-row')[1].classList.add('overdue');
 
+    let cardCal = null;
+    if (msOn() && S().msCalendar) {
+      if (task.event) {
+        const st = task.event.start ? new Date(task.event.start) : null;
+        cardCal = h('div', { class: 'card' }, h('div', { class: 'd-row on' },
+          h(task.event.link ? 'a' : 'span', { class: 'd-row-main', href: task.event.link || null, target: '_blank', rel: 'noopener' },
+            icon('calendar'), h('span', null, st ? t('inCalendar', { when: inline(relDate(toKey(st))) + ', ' + st.toLocaleTimeString(locale(), { hour: '2-digit', minute: '2-digit' }) }) : t('inCalendarShort'))),
+          h('button', { class: 'icon-btn small', title: t('removeFromCalendar'), html: window.ICONS.close, onclick: async () => {
+            try { await MS.removeEvent(task); toast(t('removedFromCalendar')); } catch { toast(t('calendarFailed')); }
+          } })));
+      } else {
+        cardCal = h('div', { class: 'card' }, rowBtn('clock', t('scheduleInCalendar'), false, () => scheduleDialog(task)));
+      }
+    }
+    const cardLinks = task.links && task.links.length
+      ? h('div', { class: 'card' }, task.links.map((ln) => h('div', { class: 'd-row on' },
+        h('a', { class: 'd-row-main', href: ln.url, target: '_blank', rel: 'noopener' }, icon('mail'), h('span', null, ln.title || t('openInOutlook'))))))
+      : null;
+    const cardErr = task.syncError ? h('div', { class: 'card sync-err' }, h('div', { class: 'd-row' }, h('span', { class: 'd-row-main' }, icon('cloud'), h('span', null, t('taskSyncError', { msg: task.syncError }))))) : null;
+
     const cats = h('div', { class: 'cat-chips' },
       task.categories.map((c) => {
         const cat = CATEGORIES.find((x) => x.id === c);
@@ -1168,7 +1329,7 @@
       h('button', { class: 'icon-btn', title: t('deleteTask'), html: window.ICONS.trash, onclick: () => removeTask(task) }));
 
     const scrollTop = $details.querySelector('.d-scroll') ? $details.querySelector('.d-scroll').scrollTop : 0;
-    const scroller = h('div', { class: 'd-scroll' }, card1, card2, card3, card4, card5, card6);
+    const scroller = h('div', { class: 'd-scroll' }, cardErr, card1, card2, card3, cardCal, cardLinks, card4, card5, card6);
     $details.replaceChildren(
       h('div', { class: 'd-top' },
         h('button', { class: 'icon-btn', title: t('close'), html: window.ICONS.close, onclick: () => { ui.selected = null; renderMainSelection(); renderDetails(); } })),
@@ -1284,7 +1445,7 @@
   // =====================================================================
   //  Settings
   // =====================================================================
-  function openSettings() {
+  function openSettings(tab = 'general') {
     const s = S();
     const seg = (name, options, value, onPick) => h('div', { class: 'seg', role: 'radiogroup', 'aria-label': name },
       options.map(([v, label]) => h('button', {
@@ -1297,10 +1458,17 @@
           e.currentTarget.classList.add('on');
         }
       }, label)));
-    const toggle = (label, key, obj = s) => h('label', { class: 'switch-row' },
-      h('span', null, label),
-      h('input', { type: 'checkbox', class: 'switch', checked: obj[key] ? 'checked' : null, onchange: (e) => { obj[key] = e.target.checked; Store.emit('settings'); } }));
+    const toggle = (label, key, obj = s, after, opts = {}) => h('label', { class: `switch-row${opts.disabled ? ' disabled' : ''}` },
+      h('span', null, label, opts.help ? h('small', { class: 'muted help' }, opts.help) : null),
+      h('input', {
+        type: 'checkbox',
+        class: 'switch',
+        checked: obj[key] ? 'checked' : null,
+        disabled: opts.disabled ? 'disabled' : null,
+        onchange: (e) => { obj[key] = e.target.checked; Store.emit('settings'); if (after) after(e.target.checked); }
+      }));
 
+    // ----- general -----
     const catInputs = h('div', { class: 'cat-names' }, CATEGORIES.map((c) => h('label', { class: 'cat-name-row' },
       h('span', { class: 'cat-dot big', style: { background: c.color } }),
       h('input', {
@@ -1314,7 +1482,116 @@
           Store.emit('settings');
         }
       }))));
+    const general = h('div', { class: 'settings' },
+      h('div', { class: 'set-row' }, h('span', null, t('language')), seg(t('language'), [['nl', 'Nederlands'], ['en', 'English']], s.lang, (v) => { s.lang = v; Store.emit('settings'); dlg.close(); openSettings('general'); })),
+      h('div', { class: 'set-row' }, h('span', null, t('appearance')), seg(t('appearance'), [['light', t('light')], ['dark', t('dark')], ['system', t('system')]], s.theme, (v) => { s.theme = v; Store.emit('settings'); })),
+      toggle(t('smartInput'), 'smartInput', s, null, { help: t('smartInputHelp') }),
+      toggle(t('confirmDelete'), 'confirmDelete'),
+      toggle(t('playSound'), 'playSound'),
+      toggle(t('newOnTop'), 'newOnTop'),
+      toggle(t('starredTop'), 'moveStarredToTop'),
+      h('h3', null, t('smartLists')),
+      toggle(t('important'), 'important', s.smartLists),
+      toggle(t('planned'), 'planned', s.smartLists),
+      toggle(t('all'), 'all', s.smartLists),
+      toggle(t('completed'), 'completed', s.smartLists),
+      h('h3', null, t('categories')),
+      catInputs);
 
+    // ----- microsoft -----
+    const microsoft = h('div', { class: 'settings' });
+    const renderMs = () => {
+      const st = MS.state;
+      const parts = [];
+      parts.push(h('div', { class: 'ms-head' },
+        h('span', { class: 'ms-logo', html: window.ICONS.msLogo }),
+        h('div', null, h('strong', null, t('msTitle')), h('p', { class: 'muted small' }, t('msIntro')))));
+      if (!MS.supported()) {
+        parts.push(h('p', { class: 'notice' }, t('msUnsupported')));
+      } else if (!st.account) {
+        parts.push(h('ul', { class: 'ms-features' },
+          [t('msF1'), t('msF2'), t('msF3'), t('msF4')].map((x) => h('li', null, icon('check'), x))));
+        parts.push(h('button', { class: 'btn primary big', onclick: msLogin, disabled: MS.clientId() ? null : 'disabled' }, h('span', { class: 'ms-logo small', html: window.ICONS.msLogo }), t('msSignIn')));
+        if (!MS.clientId()) parts.push(h('p', { class: 'notice' }, t('msNoClientId')));
+        parts.push(h('p', { class: 'muted small' }, t('msFirstSyncNote')));
+      } else {
+        const personal = st.account.personal;
+        parts.push(h('div', { class: 'ms-account' },
+          h('div', { class: 'avatar' }, (st.account.name || '?').trim().charAt(0).toUpperCase()),
+          h('div', { class: 'grow' }, h('strong', null, st.account.name), h('div', { class: 'muted small' }, st.account.username)),
+          h('button', { class: 'btn', onclick: async () => { await MS.logout(); toast(t('msSignedOut')); renderMs(); render(); } }, t('msSignOut'))));
+        if (st.needLogin) parts.push(h('div', { class: 'notice' }, t('msLoginAgainText'), ' ', h('button', { class: 'btn small primary', onclick: msLogin }, t('msLoginAgain'))));
+        const last = Store.data.sync.lastSync;
+        parts.push(
+          toggle(t('msSyncTodo'), 'msSync', s, (on) => { Store.syncLinked = on; if (on) MS.syncNow(); render(); }, { help: last ? t('lastSynced', { when: new Date(last).toLocaleString(locale(), { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) }) : t('msSyncHelp') }),
+          toggle(t('msCalendarToggle'), 'msCalendar', s, () => { MS.loadCalendar(); render(); }, { help: t('msCalendarHelp') }),
+          toggle(t('msOneDriveToggle'), 'msOneDrive', s, null, { help: s.lastCloudBackup ? t('msLastBackup', { when: new Date(s.lastCloudBackup).toLocaleString(locale(), { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) }) : t('msOneDriveHelp') }),
+          toggle(t('msPlannerToggle'), 'msPlanner', s, () => { MS.loadPlanner(); render(); }, { help: personal ? t('msPlannerWorkOnly') : t('msPlannerHelp'), disabled: personal }),
+          h('div', { class: 'row wrap gap-top' },
+            s.msSync ? h('button', { class: 'btn', onclick: async (e) => { e.currentTarget.disabled = true; const ok = await MS.syncNow(); toast(ok ? t('syncDone') : t('syncError', { msg: MS.state.error || '' })); renderMs(); } }, icon('refresh'), t('syncNow')) : null,
+            h('button', { class: 'btn', onclick: async () => { try { await MS.cloudBackup(); toast(t('msBackupDone')); renderMs(); } catch (err) { toast(t('msBackupFailed')); } } }, icon('upload'), t('msBackupNow')),
+            h('button', { class: 'btn', onclick: msRestore }, icon('download'), t('msRestore'))));
+      }
+      // advanced: own app registration
+      const idInput = h('input', { class: 'field', value: s.msClientId || '', placeholder: (window.KLAAR_CONFIG && window.KLAAR_CONFIG.msClientId) || '00000000-0000-0000-0000-000000000000', spellcheck: 'false' });
+      parts.push(h('details', { class: 'advanced', open: MS.clientId() ? null : 'open' },
+        h('summary', null, t('msAdvanced')),
+        h('p', { class: 'muted small' }, t('msClientIdHelp')),
+        h('div', { class: 'row' }, idInput, h('button', { class: 'btn', onclick: () => {
+          const v = idInput.value.trim();
+          if (v && !/^[0-9a-f-]{36}$/i.test(v)) { toast(t('msClientIdInvalid')); return; }
+          s.msClientId = v;
+          Store.emit('settings');
+          toast(t('saved'));
+          renderMs();
+        } }, t('save'))),
+        h('p', { class: 'muted small' }, t('msRedirectHelp'), ' ', h('code', null, native ? 'http://localhost' : location.origin + location.pathname.replace(/index\.html$/, '')))));
+      microsoft.replaceChildren(...parts);
+    };
+    renderMs();
+
+    // ----- desktop -----
+    const desktop = native && native.desktop ? h('div', { class: 'settings' }, h('p', { class: 'muted' }, '…')) : null;
+    if (desktop) {
+      native.desktop.get().then((d) => {
+        const set = async (patch) => {
+          const r = await native.desktop.set(patch);
+          if ('hotkey' in patch && patch.hotkey && r && !r.hotkeyOk) toast(t('dHotkeyFailed'));
+        };
+        const tg = (label, key, help, disabled) => h('label', { class: `switch-row${disabled ? ' disabled' : ''}` },
+          h('span', null, label, help ? h('small', { class: 'muted help' }, help) : null),
+          h('input', { type: 'checkbox', class: 'switch', checked: d[key] ? 'checked' : null, disabled: disabled ? 'disabled' : null, onchange: (e) => { d[key] = e.target.checked; set({ [key]: e.target.checked }); } }));
+        const keyInput = h('input', {
+          class: 'field hotkey',
+          readonly: 'readonly',
+          value: (d.hotkey || '').replace('CommandOrControl', d.platform === 'darwin' ? 'Cmd' : 'Ctrl'),
+          placeholder: t('dHotkeyNone'),
+          onkeydown: (e) => {
+            e.preventDefault();
+            if (['Control', 'Shift', 'Alt', 'Meta'].includes(e.key)) return;
+            if (e.key === 'Backspace' || e.key === 'Delete') { keyInput.value = ''; set({ hotkey: '' }); return; }
+            const mods = [];
+            if (e.ctrlKey || e.metaKey) mods.push('CommandOrControl');
+            if (e.altKey) mods.push('Alt');
+            if (e.shiftKey) mods.push('Shift');
+            if (!mods.length) return;
+            let k = e.key.length === 1 ? e.key.toUpperCase() : e.key;
+            if (k === ' ') k = 'Space';
+            const acc = [...mods, k].join('+');
+            keyInput.value = acc.replace('CommandOrControl', d.platform === 'darwin' ? 'Cmd' : 'Ctrl');
+            set({ hotkey: acc });
+          }
+        });
+        desktop.replaceChildren(
+          tg(t('dTray'), 'tray', t('dTrayHelp')),
+          tg(t('dCloseToTray'), 'closeToTray', t('dCloseToTrayHelp')),
+          tg(t('dAutostart'), 'openAtLogin', d.canAutostart ? t('dAutostartHelp') : t('dNotAvailable'), !d.canAutostart),
+          h('div', { class: 'set-row' }, h('span', null, t('dHotkey'), h('small', { class: 'muted help' }, t('dHotkeyHelp'))), keyInput),
+          tg(t('dAutoUpdate'), 'autoUpdate', d.canUpdate ? t('dAutoUpdateHelp') : t('dNotAvailable'), !d.canUpdate));
+      });
+    }
+
+    // ----- data -----
     const fileInput = h('input', {
       type: 'file',
       accept: 'application/json,.json',
@@ -1331,39 +1608,138 @@
         }
       }
     });
-
-    const body = h('div', { class: 'settings' },
-      h('h3', null, t('general')),
-      h('div', { class: 'set-row' }, h('span', null, t('language')), seg(t('language'), [['nl', 'Nederlands'], ['en', 'English']], s.lang, (v) => { s.lang = v; Store.emit('settings'); dlg.close(); openSettings(); })),
-      h('div', { class: 'set-row' }, h('span', null, t('appearance')), seg(t('appearance'), [['light', t('light')], ['dark', t('dark')], ['system', t('system')]], s.theme, (v) => { s.theme = v; Store.emit('settings'); })),
-      toggle(t('confirmDelete'), 'confirmDelete'),
-      toggle(t('playSound'), 'playSound'),
-      toggle(t('newOnTop'), 'newOnTop'),
-      toggle(t('starredTop'), 'moveStarredToTop'),
-      h('h3', null, t('smartLists')),
-      toggle(t('important'), 'important', s.smartLists),
-      toggle(t('planned'), 'planned', s.smartLists),
-      toggle(t('all'), 'all', s.smartLists),
-      toggle(t('completed'), 'completed', s.smartLists),
-      h('h3', null, t('categories')),
-      catInputs,
-      h('h3', null, t('data')),
+    const data = h('div', { class: 'settings' },
       h('div', { class: 'row wrap' },
         h('button', { class: 'btn', onclick: exportData }, icon('download'), t('export')),
         h('button', { class: 'btn', onclick: () => fileInput.click() }, icon('upload'), t('import')),
+        h('button', { class: 'btn', onclick: exportIcs }, icon('calendar'), t('exportIcs')),
         fileInput),
       h('p', { class: 'muted small', id: 'data-path' }, native ? '' : t('browserStorage')),
       h('h3', null, t('shortcuts')),
       h('div', { class: 'shortcuts' },
-        [['Ctrl/⌘ + N', t('scNew')], ['Ctrl/⌘ + F', t('scSearch')], ['Ctrl/⌘ + L', t('scList')], ['Ctrl/⌘ + Z', t('undo')], [t('space'), t('scComplete')], ['Delete', t('deleteTask')], ['Esc', t('close')]]
+        [['Ctrl/⌘ + N', t('scNew')], ['Ctrl/⌘ + F', t('scSearch')], ['Ctrl/⌘ + L', t('scList')], ['Ctrl/⌘ + 1…9', t('scLists')], ['Ctrl/⌘ + Z', t('undo')], [t('space'), t('scComplete')], ['Delete', t('deleteTask')], ['Esc', t('close')]]
           .map(([k, v]) => h('div', { class: 'sc' }, h('kbd', null, k), h('span', null, v)))),
-      h('p', { class: 'muted small about', id: 'about' }, 'Klaar · MIT · ', h('a', { href: 'https://github.com/', target: '_blank', rel: 'noopener' }, 'GitHub'))
-    );
-    const dlg = dialog({ title: t('settings'), body, wide: true, buttons: [{ label: t('done'), primary: true }] });
+      h('h3', null, t('smartInput')),
+      h('div', { class: 'examples' }, [t('ex1'), t('ex2'), t('ex3'), t('ex4'), t('ex5')].map((x) => h('code', null, x))),
+      h('p', { class: 'muted small about', id: 'about' }, 'Klaar · MIT · ', h('a', { href: 'https://github.com/anonymous2345566/Have-Done', target: '_blank', rel: 'noopener' }, 'GitHub')));
+
+    // ----- tabs -----
+    const tabs = [['general', t('tabGeneral'), general], ['microsoft', 'Microsoft', microsoft], desktop && ['desktop', t('tabDesktop'), desktop], ['data', t('tabData'), data]].filter(Boolean);
+    const panel = h('div', { class: 'tab-panel' });
+    const tabBar = h('div', { class: 'tabs', role: 'tablist' });
+    const show = (id) => {
+      tabBar.querySelectorAll('.tab').forEach((b) => b.classList.toggle('on', b.dataset.tab === id));
+      panel.replaceChildren(tabs.find((x) => x[0] === id)[2]);
+    };
+    tabs.forEach(([id, label]) => tabBar.append(h('button', { class: 'tab', role: 'tab', dataset: { tab: id }, onclick: () => show(id) }, label)));
+    show(tabs.find((x) => x[0] === tab) ? tab : 'general');
+    const unsub = () => { msSettingsRefresh = null; };
+    msSettingsRefresh = renderMs;
+    const dlg = dialog({ title: t('settings'), body: h('div', null, tabBar, panel), wide: true, buttons: [{ label: t('done'), primary: true }], onClose: unsub });
     if (native) {
       native.dataPath().then((p) => { const el = document.getElementById('data-path'); if (el) el.textContent = t('dataLocation', { path: p }); });
       native.version().then((v) => { const el = document.getElementById('about'); if (el) el.firstChild.textContent = `Klaar ${v} · MIT · `; });
     }
+  }
+  let msSettingsRefresh = null;
+
+  async function msLogin() {
+    if (!MS.clientId()) { openSettings('microsoft'); return; }
+    if (!MS.supported()) { toast(t('msUnsupported')); return; }
+    toast(t('msBrowserOpened'));
+    try {
+      await MS.login();
+      toast(t('msSignedIn', { name: MS.state.account.name }));
+      render();
+      if (msSettingsRefresh) msSettingsRefresh();
+    } catch (e) {
+      toast(t('msLoginFailed', { msg: e.message }));
+    }
+  }
+
+  async function msRestore() {
+    let info = null;
+    try { info = await MS.cloudBackupInfo(); } catch { toast(t('msBackupFailed')); return; }
+    if (!info) { toast(t('msNoBackup')); return; }
+    const when = new Date(info.lastModifiedDateTime).toLocaleString(locale(), { weekday: 'short', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' });
+    const ok = await confirmDialog(t('msRestoreQ'), t('msRestoreText', { when }), t('msRestore'), t('cancel'));
+    if (!ok) return;
+    try {
+      await MS.cloudRestore();
+      toast(t('msRestored'), { label: t('undo'), onClick: () => Store.undo() });
+    } catch {
+      toast(t('msBackupFailed'));
+    }
+  }
+
+  function scheduleDialog(task) {
+    const now = new Date();
+    const pad = (n) => String(n).padStart(2, '0');
+    const date = h('input', { type: 'date', class: 'field', value: task.due && task.due >= todayKey() ? task.due : todayKey() });
+    const time = h('input', { type: 'time', class: 'field', value: `${pad(Math.min(23, now.getHours() + 1))}:00` });
+    const dur = h('select', { class: 'field' }, [15, 30, 45, 60, 90, 120, 180, 240].map((m) =>
+      h('option', { value: m, selected: m === 60 ? 'selected' : null }, m < 60 ? `${m} ${t('minutes')}` : `${m / 60} ${t(m === 60 ? 'hour' : 'hours')}`)));
+    dialog({
+      title: t('scheduleTitle'),
+      body: h('div', { class: 'stack' },
+        h('p', { class: 'muted' }, task.title),
+        h('label', { class: 'field-label' }, t('date'), date),
+        h('div', { class: 'row' }, h('label', { class: 'field-label grow' }, t('time'), time), h('label', { class: 'field-label grow' }, t('duration'), dur))),
+      buttons: [
+        { label: t('cancel') },
+        { label: t('schedule'), primary: true, onClick: () => {
+          if (!date.value || !time.value) return false;
+          MS.scheduleEvent(task, { date: date.value, time: time.value, minutes: Number(dur.value) })
+            .then(() => toast(t('scheduled')))
+            .catch(() => toast(t('calendarFailed')));
+        } }
+      ]
+    });
+  }
+
+  function exportIcs() {
+    const esc = (v) => String(v).replace(/\\/g, '\\\\').replace(/;/g, '\;').replace(/,/g, '\\,').replace(/\r?\n/g, '\\n');
+    const fold = (line) => {
+      const out = [];
+      let rest = line;
+      while (rest.length > 74) { out.push(rest.slice(0, 74)); rest = ' ' + rest.slice(74); }
+      out.push(rest);
+      return out.join('\r\n');
+    };
+    const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d+/, '');
+    const DAY = ['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA'];
+    const rrule = (r) => {
+      if (!r) return null;
+      const n = Math.max(1, Number(r.interval) || 1);
+      if (r.freq === 'weekdays') return 'RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR';
+      const f = { daily: 'DAILY', weekly: 'WEEKLY', monthly: 'MONTHLY', yearly: 'YEARLY' }[r.freq];
+      return `RRULE:FREQ=${f};INTERVAL=${n}${r.freq === 'weekly' && r.days && r.days.length ? ';BYDAY=' + r.days.map((d) => DAY[d]).join(',') : ''}`;
+    };
+    const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Klaar//Takenapp//NL', 'CALSCALE:GREGORIAN', 'X-WR-CALNAME:Klaar'];
+    let n = 0;
+    Store.data.tasks.filter((x) => x.due && !x.done).forEach((x) => {
+      n++;
+      const start = x.due.replace(/-/g, '');
+      const end = addDays(x.due, 1).replace(/-/g, '');
+      lines.push('BEGIN:VEVENT', `UID:${x.id}@klaar`, `DTSTAMP:${stamp}`, `DTSTART;VALUE=DATE:${start}`, `DTEND;VALUE=DATE:${end}`,
+        `SUMMARY:${esc((x.important ? '⭐ ' : '') + x.title)}`);
+      if (x.note) lines.push(`DESCRIPTION:${esc(x.note)}`);
+      lines.push(`CATEGORIES:${esc(listName(Store.list(x.listId)))}`);
+      const rr = rrule(x.repeat);
+      if (rr) lines.push(rr);
+      if (x.reminder) {
+        const r = new Date(x.reminder).toISOString().replace(/[-:]/g, '').replace(/\.\d+/, '');
+        lines.push('BEGIN:VALARM', 'ACTION:DISPLAY', `DESCRIPTION:${esc(x.title)}`, `TRIGGER;VALUE=DATE-TIME:${r}`, 'END:VALARM');
+      }
+      lines.push('END:VEVENT');
+    });
+    lines.push('END:VCALENDAR');
+    const blob = new Blob([lines.map(fold).join('\r\n') + '\r\n'], { type: 'text/calendar' });
+    const a = h('a', { href: URL.createObjectURL(blob), download: `klaar-${todayKey()}.ics` });
+    document.body.append(a);
+    a.click();
+    setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+    toast(t('icsExported', { n }));
   }
 
   function exportData() {
@@ -1445,6 +1821,11 @@
       e.preventDefault();
       if (!S().sidebarOpen) toggleSidebar(true);
       $sidebar.querySelector('.new-list-input').focus();
+    } else if (mod && /^[1-9]$/.test(e.key) && !e.altKey) {
+      e.preventDefault();
+      const items = [...$sidebar.querySelectorAll('.nav-item')];
+      const target = items[Number(e.key) - 1];
+      if (target) target.click();
     } else if (mod && e.key.toLowerCase() === 'z' && !inField) {
       e.preventDefault();
       if (Store.undo()) toast(t('undone'));
@@ -1478,8 +1859,44 @@
     }
     Store.subscribe((what) => {
       if (what === 'settings') window.I18N.setLang(S().lang);
-      render();
+      if (what === 'sync') softRender();
+      else render();
     });
+
+    // Microsoft account: re-render quietly when sync, calendar or Planner change
+    let msTimer = null;
+    MS.onChange(() => {
+      clearTimeout(msTimer);
+      msTimer = setTimeout(() => { softRender(); if (msSettingsRefresh) msSettingsRefresh(); }, 120);
+    });
+    await MS.init().catch((e) => console.warn('Microsoft init failed', e));
+    if (MS.state.justSignedIn && MS.state.account) {
+      MS.state.justSignedIn = false;
+      setTimeout(() => toast(t('msSignedIn', { name: MS.state.account.name })), 300);
+    } else if (MS.state.error && !MS.state.account) {
+      setTimeout(() => toast(t('msLoginFailed', { msg: MS.state.error })), 300);
+    }
+
+    if (native && native.quickAdd) {
+      native.quickAdd.onTask((text) => {
+        const parsed = parseSmart(text);
+        const fields = { title: parsed.title || text, listId: parsed.listId || 'inbox' };
+        ['due', 'reminder', 'repeat', 'categories'].forEach((k) => { if (parsed[k]) fields[k] = parsed[k]; });
+        if (parsed.important) fields.important = true;
+        if (parsed.myDay) fields.myDay = todayKey();
+        Store.addTask(fields);
+        toast(t('quickAdded', { title: fields.title, list: listName(Store.list(fields.listId)) }));
+      });
+    }
+    if (native && native.updates) {
+      native.updates.onStatus((st) => {
+        if (st.status === 'ready') {
+          ui.update = st.version || 'new';
+          renderSidebar();
+          toast(t('updateReady', { v: st.version || '' }), { label: t('restartNow'), onClick: () => native.updates.install() });
+        }
+      });
+    }
     render();
     checkReminders();
     setInterval(checkReminders, 15000);

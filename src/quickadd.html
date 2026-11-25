@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:" />
+  <title>Klaar — snel toevoegen</title>
+  <style>
+    html, body { margin: 0; background: transparent; font-family: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif; overflow: hidden; }
+    .box { margin: 10px; background: #fff; color: #252423; border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,.28), 0 0 0 1px rgba(0,0,0,.06); padding: 14px 16px 10px; }
+    @media (prefers-color-scheme: dark) { .box { background: #2b2b2b; color: #f1f1f1; box-shadow: 0 10px 30px rgba(0,0,0,.6), 0 0 0 1px rgba(255,255,255,.08); } .hint { color: #a19f9d !important; } }
+    .row { display: flex; align-items: center; gap: 12px; }
+    .plus { width: 26px; height: 26px; border-radius: 8px; background: linear-gradient(135deg,#4f8bff,#2346b8); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 18px; flex: none; }
+    input { flex: 1; border: 0; outline: 0; background: transparent; font: inherit; font-size: 18px; color: inherit; }
+    .chips { display: flex; flex-wrap: wrap; gap: 6px; min-height: 24px; margin-top: 10px; align-items: center; }
+    .chip { font-size: 12px; padding: 2px 8px; border-radius: 10px; background: rgba(47,95,208,.12); color: #2f5fd0; }
+    @media (prefers-color-scheme: dark) { .chip { color: #9cbcff; background: rgba(122,162,255,.16); } }
+    .hint { font-size: 12px; color: #8a8886; margin-left: auto; }
+  </style>
+</head>
+<body>
+  <div class="box">
+    <div class="row"><div class="plus">+</div><input id="q" autofocus placeholder="Taak toevoegen…  bv. morgen 9:00 offerte sturen !" /></div>
+    <div class="chips" id="chips"><span class="hint" id="hint">Enter = opslaan · Esc = sluiten</span></div>
+  </div>
+  <script src="nlp.js"></script>
+  <script src="quickadd.js"></script>
+</body>
+</html>

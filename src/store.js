@@ -38,6 +38,9 @@
     { id: 'yellow', color: '#d1a400' }
   ];
 
+  // task fields that live in Microsoft To Do; changing one marks the task for upload
+  const REMOTE_FIELDS = ['title', 'done', 'important', 'due', 'reminder', 'repeat', 'steps', 'note', 'categories', 'listId'];
+
   function defaultData() {
     const now = new Date().toISOString();
     return {
@@ -52,7 +55,14 @@
         smartLists: { important: true, planned: true, all: true, completed: true },
         lastDay: todayKey(),
         sidebarOpen: true,
-        categoryNames: {}
+        categoryNames: {},
+        smartInput: true,
+        msClientId: '',
+        msSync: true,
+        msCalendar: true,
+        msOneDrive: true,
+        msPlanner: true,
+        lastCloudBackup: null
       },
       smart: {
         myday: { theme: 'blue', sort: null, showCompleted: true },
@@ -60,9 +70,11 @@
         planned: { theme: 'teal', sort: null, showCompleted: true },
         all: { theme: 'gray', sort: null, showCompleted: true },
         completed: { theme: 'green', sort: null, showCompleted: true },
+        assigned: { theme: 'teal', sort: null, showCompleted: true },
         search: { theme: 'gray', sort: null, showCompleted: true }
       },
       groups: [],
+      sync: { deletes: [], tasksDelta: {}, lastSync: null },
       lists: [
         { id: 'inbox', name: null, emoji: '', theme: 'blue', groupId: null, order: 0, sort: null, showCompleted: true, createdAt: now }
       ],
@@ -99,7 +111,11 @@
       order: Number.isFinite(l.order) ? l.order : i,
       sort: okSort(l.sort),
       showCompleted: l.showCompleted !== false,
-      createdAt: iso(l.createdAt) || new Date().toISOString()
+      createdAt: iso(l.createdAt) || new Date().toISOString(),
+      msListId: typeof l.msListId === 'string' ? l.msListId : null,
+      wellKnown: typeof l.wellKnown === 'string' ? l.wellKnown.slice(0, 40) : null,
+      dirty: !!l.dirty,
+      updatedAt: iso(l.updatedAt)
     }));
     if (!d.lists.find((l) => l.id === 'inbox')) d.lists.unshift(base.lists[0]);
     Object.keys(base.smart).forEach((k) => {
@@ -129,13 +145,31 @@
         repeat: rep,
         steps: (Array.isArray(t.steps) ? t.steps : [])
           .filter((s) => s && typeof s === 'object')
-          .map((s) => ({ id: typeof s.id === 'string' ? s.id : uid(), title: str(s.title, 1000) || '…', done: !!s.done })),
+          .map((s) => ({ id: typeof s.id === 'string' ? s.id : uid(), title: str(s.title, 1000) || '…', done: !!s.done, msId: typeof s.msId === 'string' ? s.msId : null })),
         note: str(t.note, 100000),
         categories: (Array.isArray(t.categories) ? t.categories : []).filter((c) => catIds.includes(c)),
         createdAt: iso(t.createdAt) || new Date().toISOString(),
-        order: Number.isFinite(t.order) ? t.order : i
+        order: Number.isFinite(t.order) ? t.order : i,
+        msId: typeof t.msId === 'string' ? t.msId : null,
+        msListId: typeof t.msListId === 'string' ? t.msListId : null,
+        dirty: t.dirty === undefined ? true : !!t.dirty,
+        updatedAt: iso(t.updatedAt) || iso(t.createdAt) || new Date().toISOString(),
+        links: (Array.isArray(t.links) ? t.links : [])
+          .filter((x) => x && typeof x.url === 'string' && /^https:\/\//i.test(x.url))
+          .slice(0, 10)
+          .map((x) => ({ url: x.url.slice(0, 2000), title: str(x.title, 300) })),
+        extraCats: (Array.isArray(t.extraCats) ? t.extraCats : []).filter((c) => typeof c === 'string').slice(0, 20),
+        event: t.event && typeof t.event === 'object' && typeof t.event.id === 'string'
+          ? { id: t.event.id, start: iso(t.event.start), link: typeof t.event.link === 'string' && /^https:\/\//i.test(t.event.link) ? t.event.link : null }
+          : null
       };
     });
+    const sy = d.sync && typeof d.sync === 'object' ? d.sync : {};
+    d.sync = {
+      deletes: (Array.isArray(sy.deletes) ? sy.deletes : []).filter((x) => x && typeof x.msListId === 'string'),
+      tasksDelta: sy.tasksDelta && typeof sy.tasksDelta === 'object' ? sy.tasksDelta : {},
+      lastSync: iso(sy.lastSync)
+    };
     const s = d.settings;
     if (!['system', 'light', 'dark'].includes(s.theme)) s.theme = 'system';
     if (!['nl', 'en'].includes(s.lang)) s.lang = 'nl';
@@ -180,6 +214,25 @@
     },
 
     subscribe(fn) { this.listeners.push(fn); },
+
+    // ----- change tracking for Microsoft To Do sync -----
+    // syncLinked: true while a Microsoft account is connected and sync is on
+    syncLinked: false,
+    changeHooks: [],
+    onLocalChange(fn) { this.changeHooks.push(fn); },
+    touchTask(t) {
+      t.dirty = true;
+      t.updatedAt = new Date().toISOString();
+      this.changeHooks.forEach((fn) => fn('task'));
+    },
+    touchList(l) {
+      l.dirty = true;
+      l.updatedAt = new Date().toISOString();
+      this.changeHooks.forEach((fn) => fn('list'));
+    },
+    queueDelete(item) {
+      this.data.sync.deletes.push({ ...item, at: Date.now() });
+    },
     emit(what) {
       this.save();
       this.listeners.forEach((fn) => fn(what));
@@ -220,20 +273,25 @@
     addList(name, groupId = null) {
       const order = Math.max(0, ...this.data.lists.map((l) => l.order)) + 1;
       const theme = THEMES[this.data.lists.length % THEMES.length];
-      const l = { id: uid(), name, emoji: '', theme, groupId, order, sort: null, showCompleted: true, createdAt: new Date().toISOString() };
+      const l = { id: uid(), name, emoji: '', theme, groupId, order, sort: null, showCompleted: true, createdAt: new Date().toISOString(), msListId: null, wellKnown: null };
       this.data.lists.push(l);
+      this.touchList(l);
       this.emit('lists');
       return l;
     },
     updateList(id, patch) {
       const l = this.list(id);
       if (!l) return;
+      const remote = ('name' in patch && patch.name !== l.name) || ('emoji' in patch && patch.emoji !== l.emoji);
       Object.assign(l, patch);
+      if (remote) this.touchList(l);
       this.emit('lists');
     },
     deleteList(id) {
       if (id === 'inbox') return;
       this.snapshot();
+      const l = this.list(id);
+      if (l && l.msListId) this.queueDelete({ type: 'list', msListId: l.msListId });
       this.data.lists = this.data.lists.filter((l) => l.id !== id);
       this.data.tasks = this.data.tasks.filter((t) => t.listId !== id);
       this.emit('all');
@@ -250,6 +308,11 @@
             ...JSON.parse(JSON.stringify(t)),
             id: uid(),
             listId: copy.id,
+            msId: null,
+            msListId: null,
+            event: null,
+            dirty: true,
+            updatedAt: new Date().toISOString(),
             createdAt: new Date().toISOString()
           });
         });
@@ -309,10 +372,16 @@
         categories: [],
         createdAt: new Date().toISOString(),
         order: top ? Math.min(0, ...orders) - 1 : Math.max(0, ...orders) + 1,
+        msId: null,
+        msListId: null,
+        links: [],
+        extraCats: [],
+        event: null,
         ...fields
       };
       if (t.repeat && !t.due) t.due = todayKey();
       this.data.tasks.push(t);
+      this.touchTask(t);
       this.emit('tasks');
       return t;
     },
@@ -320,13 +389,17 @@
       const t = this.task(id);
       if (!t) return;
       if ('reminder' in patch && patch.reminder !== t.reminder) patch.reminded = false;
+      const remote = Object.keys(patch).some((k) => REMOTE_FIELDS.includes(k) && (k === 'steps' || JSON.stringify(patch[k]) !== JSON.stringify(t[k])));
       Object.assign(t, patch);
       if (t.repeat && !t.due) t.due = todayKey();
+      if (remote) this.touchTask(t);
       if (silent) this.save();
       else this.emit('tasks');
     },
     deleteTask(id) {
       this.snapshot();
+      const t = this.task(id);
+      if (t && t.msId && t.msListId) this.queueDelete({ type: 'task', msListId: t.msListId, msId: t.msId });
       this.data.tasks = this.data.tasks.filter((t) => t.id !== id);
       this.emit('tasks');
     },
@@ -337,11 +410,13 @@
       if (!t.done) {
         t.done = true;
         t.doneAt = new Date().toISOString();
-        if (t.repeat) spawned = this.spawnRepeat(t);
+        // Microsoft To Do creates the next occurrence itself for synced tasks
+        if (t.repeat && !(this.syncLinked && t.msId)) spawned = this.spawnRepeat(t);
       } else {
         t.done = false;
         t.doneAt = null;
       }
+      this.touchTask(t);
       this.emit('tasks');
       return spawned;
     },
@@ -363,7 +438,13 @@
         reminder,
         reminded: false,
         myDay: null,
-        steps: t.steps.map((s) => ({ ...s, id: uid(), done: false })),
+        steps: t.steps.map((s) => ({ id: uid(), title: s.title, done: false })),
+        msId: null,
+        msListId: null,
+        event: null,
+        links: [],
+        dirty: true,
+        updatedAt: new Date().toISOString(),
         createdAt: new Date().toISOString()
       };
       // the finished occurrence no longer repeats; the new one carries it on

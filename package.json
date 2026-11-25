@@ -1,8 +1,8 @@
 {
   "name": "klaar",
   "productName": "Klaar",
-  "version": "1.0.1",
-  "description": "Klaar — een snelle, offline takenapp geïnspireerd op Microsoft To Do. Mijn dag, slimme lijsten, stappen, herinneringen en herhalende taken.",
+  "version": "1.1.0",
+  "description": "Klaar — een snelle takenapp geïnspireerd op Microsoft To Do, met synchronisatie met Microsoft To Do, Outlook-agenda en OneDrive.",
   "main": "main.js",
   "author": "Zijlstra",
   "license": "MIT",
@@ -13,7 +13,7 @@
     "dist:win": "electron-builder --win --publish never",
     "dist:mac": "electron-builder --mac --publish never",
     "dist:linux": "electron-builder --linux --publish never",
-    "test": "node --test test/repeat.test.js"
+    "test": "node --test test/repeat.test.js test/nlp.test.js"
   },
   "devDependencies": {
     "electron": "^45.4.1",
@@ -29,6 +29,7 @@
     },
     "files": [
       "main.js",
+      "ms-main.js",
       "preload.js",
       "src/**/*",
       "build/icon.png"
@@ -82,7 +83,14 @@
       "maintainer": "Klaar",
       "artifactName": "Klaar-${version}-${arch}.${ext}"
     },
-    "publish": null,
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "anonymous2345566",
+        "repo": "Have-Done",
+        "releaseType": "release"
+      }
+    ],
     "electronFuses": {
       "runAsNode": false,
       "enableCookieEncryption": true,
@@ -95,5 +103,9 @@
   "repository": {
     "type": "git",
     "url": "https://github.com/anonymous2345566/Have-Done.git"
+  },
+  "dependencies": {
+    "@azure/msal-node": "^7.2.3",
+    "electron-updater": "^6.8.11"
   }
 }
