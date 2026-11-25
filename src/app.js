@@ -1283,6 +1283,12 @@
       ? h('div', { class: 'card' }, task.links.map((ln) => h('div', { class: 'd-row on' },
         h('a', { class: 'd-row-main', href: ln.url, target: '_blank', rel: 'noopener' }, icon('mail'), h('span', null, ln.title || t('openInOutlook'))))))
       : null;
+    const feed = window.Connectors && Connectors.feedOf(task);
+    const cardFeed = task.ext && task.ext.url
+      ? h('div', { class: 'card' }, h('div', { class: 'd-row on' },
+        h('a', { class: 'd-row-main', href: task.ext.url, target: '_blank', rel: 'noopener' }, icon('link'), h('span', null, t('openIn', { name: (feed && feed.name) || t('source') })))),
+        h('div', { class: 'd-hint muted small' }, t('linkedHint', { name: (feed && feed.name) || t('source') })))
+      : null;
     const cardErr = task.syncError ? h('div', { class: 'card sync-err' }, h('div', { class: 'd-row' }, h('span', { class: 'd-row-main' }, icon('cloud'), h('span', null, t('taskSyncError', { msg: task.syncError }))))) : null;
 
     const cats = h('div', { class: 'cat-chips' },
@@ -1329,7 +1335,7 @@
       h('button', { class: 'icon-btn', title: t('deleteTask'), html: window.ICONS.trash, onclick: () => removeTask(task) }));
 
     const scrollTop = $details.querySelector('.d-scroll') ? $details.querySelector('.d-scroll').scrollTop : 0;
-    const scroller = h('div', { class: 'd-scroll' }, cardErr, card1, card2, card3, cardCal, cardLinks, card4, card5, card6);
+    const scroller = h('div', { class: 'd-scroll' }, cardErr, card1, cardFeed, card2, card3, cardCal, cardLinks, card4, card5, card6);
     $details.replaceChildren(
       h('div', { class: 'd-top' },
         h('button', { class: 'icon-btn', title: t('close'), html: window.ICONS.close, onclick: () => { ui.selected = null; renderMainSelection(); renderDetails(); } })),
@@ -1591,6 +1597,73 @@
       });
     }
 
+    // ----- koppelingen -----
+    const koppelingen = h('div', { class: 'settings' });
+    const renderFeeds = () => {
+      const list = Connectors.feeds();
+      const rows = list.map((f) => {
+        const busy = Connectors.state.syncing[f.id];
+        const status = busy ? t('syncing')
+          : f.error ? t('feedError', { msg: f.error })
+          : f.lastSync ? t('feedOk', { n: f.count || 0, when: new Date(f.lastSync).toLocaleTimeString(locale(), { hour: '2-digit', minute: '2-digit' }) })
+          : t('feedNever');
+        return h('div', { class: 'feed-row' },
+          h('div', { class: 'feed-icon' }, icon('link')),
+          h('div', { class: 'grow' },
+            h('strong', null, f.name || new URL(f.url).hostname),
+            h('div', { class: 'muted small ellipsis' }, f.url),
+            h('div', { class: `small ${f.error ? 'err-text' : 'muted'}` }, status)),
+          h('button', { class: 'icon-btn', title: t('syncNow'), html: window.ICONS.refresh, onclick: () => Connectors.syncFeed(f) }),
+          h('button', { class: 'icon-btn', title: t('remove'), html: window.ICONS.trash, onclick: async () => {
+            const withTasks = await confirmDialog(t('feedRemoveQ', { name: f.name || f.url }), t('feedRemoveText'), t('feedRemoveAll'), t('feedRemoveKeep'));
+            Connectors.remove(f.id, withTasks);
+            renderFeeds();
+          } }));
+      });
+
+      const url = h('input', { class: 'field', placeholder: 'https://crm.jouwdomein.nl/klaar-api.php', spellcheck: 'false' });
+      const token = h('input', { class: 'field', type: 'password', placeholder: t('feedTokenPh'), autocomplete: 'off' });
+      const name = h('input', { class: 'field', placeholder: t('feedNamePh') });
+      const myday = h('input', { type: 'checkbox', class: 'switch', checked: 'checked' });
+      const result = h('p', { class: 'small muted' });
+      const tryAdd = async (save) => {
+        const u = url.value.trim();
+        if (!Connectors.validUrl(u)) { result.className = 'small err-text'; result.textContent = t('feedBadUrl'); return; }
+        result.className = 'small muted';
+        result.textContent = t('feedTesting');
+        try {
+          const r = await Connectors.test(u, token.value.trim());
+          if (!name.value.trim() && r.name) name.value = r.name;
+          result.className = 'small ok-text';
+          result.textContent = t('feedTestOk', { name: r.name || u, n: r.open });
+          if (save) {
+            Connectors.add({ name: name.value.trim() || r.name, url: u, token: token.value.trim(), myDayToday: myday.checked });
+            toast(t('feedAdded'));
+            renderFeeds();
+          }
+        } catch (e) {
+          result.className = 'small err-text';
+          result.textContent = t('feedTestFail', { msg: e.message === 'offline' ? t('feedUnreachable') : e.message });
+        }
+      };
+
+      koppelingen.replaceChildren(
+        h('p', { class: 'muted small' }, t('feedsIntro')),
+        rows.length ? h('div', { class: 'feed-list' }, rows) : h('p', { class: 'notice' }, t('feedsNone')),
+        h('h3', null, t('feedAdd')),
+        h('div', { class: 'stack' },
+          h('label', { class: 'field-label' }, t('feedUrl'), url),
+          h('label', { class: 'field-label' }, t('feedToken'), token),
+          h('label', { class: 'field-label' }, t('feedName'), name),
+          h('label', { class: 'switch-row' }, h('span', null, t('feedMyDay')), myday),
+          h('div', { class: 'row' },
+            h('button', { class: 'btn', onclick: () => tryAdd(false) }, t('feedTest')),
+            h('button', { class: 'btn primary', onclick: () => tryAdd(true) }, t('feedSave'))),
+          result),
+        h('p', { class: 'muted small' }, t('feedsPhone')));
+    };
+    renderFeeds();
+
     // ----- data -----
     const fileInput = h('input', {
       type: 'file',
@@ -1624,7 +1697,7 @@
       h('p', { class: 'muted small about', id: 'about' }, 'Klaar · MIT · ', h('a', { href: 'https://github.com/anonymous2345566/Have-Done', target: '_blank', rel: 'noopener' }, 'GitHub')));
 
     // ----- tabs -----
-    const tabs = [['general', t('tabGeneral'), general], ['microsoft', 'Microsoft', microsoft], desktop && ['desktop', t('tabDesktop'), desktop], ['data', t('tabData'), data]].filter(Boolean);
+    const tabs = [['general', t('tabGeneral'), general], ['microsoft', 'Microsoft', microsoft], ['koppelingen', t('tabLinks'), koppelingen], desktop && ['desktop', t('tabDesktop'), desktop], ['data', t('tabData'), data]].filter(Boolean);
     const panel = h('div', { class: 'tab-panel' });
     const tabBar = h('div', { class: 'tabs', role: 'tablist' });
     const show = (id) => {
@@ -1633,8 +1706,9 @@
     };
     tabs.forEach(([id, label]) => tabBar.append(h('button', { class: 'tab', role: 'tab', dataset: { tab: id }, onclick: () => show(id) }, label)));
     show(tabs.find((x) => x[0] === tab) ? tab : 'general');
-    const unsub = () => { msSettingsRefresh = null; };
+    const unsub = () => { msSettingsRefresh = null; feedsSettingsRefresh = null; };
     msSettingsRefresh = renderMs;
+    feedsSettingsRefresh = () => { if (koppelingen.isConnected && !koppelingen.contains(document.activeElement)) renderFeeds(); };
     const dlg = dialog({ title: t('settings'), body: h('div', null, tabBar, panel), wide: true, buttons: [{ label: t('done'), primary: true }], onClose: unsub });
     if (native) {
       native.dataPath().then((p) => { const el = document.getElementById('data-path'); if (el) el.textContent = t('dataLocation', { path: p }); });
@@ -1642,6 +1716,7 @@
     }
   }
   let msSettingsRefresh = null;
+  let feedsSettingsRefresh = null;
 
   async function msLogin() {
     if (!MS.clientId()) { openSettings('microsoft'); return; }
@@ -1859,7 +1934,7 @@
     }
     Store.subscribe((what) => {
       if (what === 'settings') window.I18N.setLang(S().lang);
-      if (what === 'sync') softRender();
+      if (what === 'sync' || what === 'feed') softRender();
       else render();
     });
 
@@ -1876,6 +1951,9 @@
     } else if (MS.state.error && !MS.state.account) {
       setTimeout(() => toast(t('msLoginFailed', { msg: MS.state.error })), 300);
     }
+
+    Connectors.init();
+    Connectors.onChange(() => { if (feedsSettingsRefresh) feedsSettingsRefresh(); });
 
     if (native && native.quickAdd) {
       native.quickAdd.onTask((text) => {

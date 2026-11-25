@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta http-equiv="Content-Security-Policy"
-        content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://graph.microsoft.com https://login.microsoftonline.com https://*.1drv.com https://*.sharepoint.com https://*.microsoftpersonalcontent.com; form-action 'self' https://login.microsoftonline.com" />
+        content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https: http://localhost:* http://127.0.0.1:* https://graph.microsoft.com https://login.microsoftonline.com https://*.1drv.com https://*.sharepoint.com https://*.microsoftpersonalcontent.com; form-action 'self' https://login.microsoftonline.com" />
   <title>Klaar</title>
   <link rel="icon" href="icon.png" />
   <link rel="manifest" href="manifest.webmanifest" />
@@ -27,6 +27,7 @@
   <script src="ui.js"></script>
   <script src="nlp.js"></script>
   <script src="microsoft.js"></script>
+  <script src="connectors.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

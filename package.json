@@ -1,7 +1,7 @@
 {
   "name": "klaar",
   "productName": "Klaar",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Klaar — een snelle takenapp geïnspireerd op Microsoft To Do, met synchronisatie met Microsoft To Do, Outlook-agenda en OneDrive.",
   "main": "main.js",
   "author": "Zijlstra",

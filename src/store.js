@@ -159,6 +159,15 @@
           .slice(0, 10)
           .map((x) => ({ url: x.url.slice(0, 2000), title: str(x.title, 300) })),
         extraCats: (Array.isArray(t.extraCats) ? t.extraCats : []).filter((c) => typeof c === 'string').slice(0, 20),
+        ext: t.ext && typeof t.ext === 'object' && typeof t.ext.feed === 'string' && typeof t.ext.id === 'string'
+          ? {
+              feed: t.ext.feed,
+              id: t.ext.id.slice(0, 200),
+              url: typeof t.ext.url === 'string' && /^https?:\/\//i.test(t.ext.url) ? t.ext.url : null,
+              snap: t.ext.snap && typeof t.ext.snap === 'object' ? { done: !!t.ext.snap.done, steps: t.ext.snap.steps && typeof t.ext.snap.steps === 'object' ? t.ext.snap.steps : {} } : { done: false, steps: {} },
+              reminder: iso(t.ext.reminder)
+            }
+          : undefined,
         event: t.event && typeof t.event === 'object' && typeof t.event.id === 'string'
           ? { id: t.event.id, start: iso(t.event.start), link: typeof t.event.link === 'string' && /^https:\/\//i.test(t.event.link) ? t.event.link : null }
           : null
@@ -171,6 +180,13 @@
       lastSync: iso(sy.lastSync)
     };
     const s = d.settings;
+    s.feeds = (Array.isArray(s.feeds) ? s.feeds : [])
+      .filter((f) => f && typeof f.id === 'string' && typeof f.url === 'string')
+      .map((f) => ({
+        id: f.id, name: str(f.name, 100), url: f.url.slice(0, 2000), token: str(f.token, 500),
+        myDayToday: f.myDayToday !== false, listId: typeof f.listId === 'string' ? f.listId : null,
+        lastSync: iso(f.lastSync), error: null, count: Number.isFinite(f.count) ? f.count : null
+      }));
     if (!['system', 'light', 'dark'].includes(s.theme)) s.theme = 'system';
     if (!['nl', 'en'].includes(s.lang)) s.lang = 'nl';
     s.categoryNames = s.categoryNames && typeof s.categoryNames === 'object' ? Object.fromEntries(
@@ -466,10 +482,20 @@
     },
 
     // ----- import / export -----
-    exportJSON() { return JSON.stringify(this.data, null, 2); },
+    // backups never contain the secret keys of your koppelingen
+    exportJSON() {
+      const copy = JSON.parse(JSON.stringify(this.data));
+      (copy.settings.feeds || []).forEach((f) => { f.token = ''; });
+      return JSON.stringify(copy, null, 2);
+    },
     importJSON(text) {
       const parsed = JSON.parse(text);
       if (!parsed || !Array.isArray(parsed.tasks) || !Array.isArray(parsed.lists)) throw new Error('invalid');
+      // keep the keys of koppelingen that are already set up here
+      const keys = Object.fromEntries((this.data.settings.feeds || []).map((f) => [f.id, f.token]));
+      if (parsed.settings && Array.isArray(parsed.settings.feeds)) {
+        parsed.settings.feeds.forEach((f) => { if (f && !f.token && keys[f.id]) f.token = keys[f.id]; });
+      }
       this.snapshot();
       this.data = normalize(parsed);
       this.emit('all');

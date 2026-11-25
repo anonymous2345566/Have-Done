@@ -25,6 +25,11 @@
 - **Automatische back-up naar OneDrive**: dagelijks, in een eigen app-map, en terug te zetten op een andere pc
 - **Toegewezen aan mij**: taken uit Planner en Teams (werk- of schoolaccount)
 
+### Koppelingen met je eigen systemen
+- Haal **opdrachten uit je CRM** (of elk ander systeem) binnen als taken, met stappen, datum en klantgegevens
+- Vink je iets af in Klaar of op je telefoon, dan wordt het in je CRM bijgewerkt
+- Zie [docs/KOPPELINGEN.md](docs/KOPPELINGEN.md) voor het formaat, zodat je zelf andere systemen kunt aansluiten
+
 ### Taken
 - **Mijn dag**: een dagplanner die elke ochtend weer leeg begint, met **suggesties** (te laat, vandaag, van eerdere dagen, binnenkort, belangrijk)
 - **Slimme lijsten**: Belangrijk, Gepland (gegroepeerd op Eerder / Vandaag / Morgen / Later deze week / Later), Alles, Voltooid en Taken
@@ -60,6 +65,7 @@ Werkt ook in het Engels (`tomorrow 9am`, `every monday`). Uitzetten kan in Inste
 
 ![Mijn dag met Outlook-agenda](docs/screenshot-agenda.png)
 ![Taakdetails met afspraak in Outlook](docs/screenshot-microsoft.png)
+![Opdrachten uit de CRM](docs/screenshot-crm.png)
 ![Donkere modus](docs/screenshot-donker.png)
 ![Gepland](docs/screenshot-gepland.png)
 
@@ -183,6 +189,7 @@ src/
   app.js           Weergaven, interactie en logica
   store.js         Datamodel, opslag, Mijn dag-reset, herhalingen
   microsoft.js     To Do-sync, Outlook-agenda, OneDrive, Planner
+  connectors.js    Koppelingen met eigen systemen (Klaar-feed)
   nlp.js           Slim typen (NL/EN)
   quickadd.*       Snel-toevoegen-venster
   config.js        Microsoft Client ID

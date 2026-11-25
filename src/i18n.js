@@ -85,7 +85,17 @@
     updateReady: 'Update {v} staat klaar', restartNow: 'Herstarten',
     exportIcs: 'Agenda exporteren (.ics)', icsExported: '{n} taken met een datum geëxporteerd',
     scheduleTitle: 'Inplannen in Outlook-agenda', date: 'Datum', time: 'Tijd', duration: 'Duur', minutes: 'minuten', hour: 'uur', hours: 'uur',
-    schedule: 'Inplannen', scheduled: 'Ingepland in je Outlook-agenda', quickAdded: '"{title}" toegevoegd aan {list}', scLists: 'Lijst 1 t/m 9 openen'
+    schedule: 'Inplannen', scheduled: 'Ingepland in je Outlook-agenda', quickAdded: '"{title}" toegevoegd aan {list}', scLists: 'Lijst 1 t/m 9 openen',
+    tabLinks: 'Koppelingen', source: 'bron', openIn: 'Openen in {name}', linkedHint: 'Gekoppeld met {name}: stappen en afvinken gaan terug naar {name}; titel en notitie komen daarvandaan.',
+    feedsIntro: 'Haal taken op uit je eigen systemen, zoals je CRM, via een Klaar-feed. Wat je hier afvinkt (ook op je telefoon via Microsoft To Do) gaat terug naar dat systeem.',
+    feedsNone: 'Nog geen koppelingen. Voeg hieronder het adres van je CRM toe.', feedAdd: 'Koppeling toevoegen',
+    feedUrl: 'Adres (URL van de Klaar-feed)', feedToken: 'Sleutel', feedTokenPh: 'De KLAAR_API_TOKEN uit je config.php', feedName: 'Naam (optioneel)', feedNamePh: 'bv. Zijlstra CRM',
+    feedMyDay: 'Taken van vandaag automatisch in Mijn dag', feedTest: 'Verbinding testen', feedSave: 'Opslaan en synchroniseren', feedTesting: 'Verbinding testen…',
+    feedTestOk: 'Verbonden met {name}: {n} openstaande taken.', feedTestFail: 'Lukt niet: {msg}', feedUnreachable: 'adres niet bereikbaar (klopt de URL, en staat klaar-api.php op de server?)',
+    feedBadUrl: 'Vul een https-adres in.', feedAdded: 'Koppeling toegevoegd', feedOk: '{n} taken · bijgewerkt om {when}', feedNever: 'Nog niet gesynchroniseerd', feedError: 'Fout: {msg}',
+    feedRemoveQ: 'Koppeling met {name} verwijderen?', feedRemoveText: 'Wil je de lijst met taken uit deze koppeling ook verwijderen, of houden als gewone lijst?',
+    feedRemoveAll: 'Lijst ook verwijderen', feedRemoveKeep: 'Lijst houden',
+    feedsPhone: 'Tip: zet ook de Microsoft-synchronisatie aan, dan staan deze taken via de Microsoft To Do-app op je telefoon.'
   };
 
   const en = {
@@ -173,7 +183,17 @@
     updateReady: 'Update {v} is ready', restartNow: 'Restart',
     exportIcs: 'Export calendar (.ics)', icsExported: 'Exported {n} tasks with a date',
     scheduleTitle: 'Schedule in Outlook calendar', date: 'Date', time: 'Time', duration: 'Duration', minutes: 'minutes', hour: 'hour', hours: 'hours',
-    schedule: 'Schedule', scheduled: 'Scheduled in your Outlook calendar', quickAdded: '"{title}" added to {list}', scLists: 'Open list 1 to 9'
+    schedule: 'Schedule', scheduled: 'Scheduled in your Outlook calendar', quickAdded: '"{title}" added to {list}', scLists: 'Open list 1 to 9',
+    tabLinks: 'Integrations', source: 'source', openIn: 'Open in {name}', linkedHint: 'Linked with {name}: steps and completion go back to {name}; title and note come from there.',
+    feedsIntro: 'Pull tasks from your own systems, like your CRM, through a Klaar feed. What you check off here (also on your phone via Microsoft To Do) goes back to that system.',
+    feedsNone: 'No integrations yet. Add the address of your CRM below.', feedAdd: 'Add integration',
+    feedUrl: 'Address (Klaar feed URL)', feedToken: 'Key', feedTokenPh: 'The KLAAR_API_TOKEN from your config.php', feedName: 'Name (optional)', feedNamePh: 'e.g. My CRM',
+    feedMyDay: 'Put today\'s tasks in My Day automatically', feedTest: 'Test connection', feedSave: 'Save and sync', feedTesting: 'Testing connection…',
+    feedTestOk: 'Connected to {name}: {n} open tasks.', feedTestFail: 'Did not work: {msg}', feedUnreachable: 'address not reachable (is the URL right, and is klaar-api.php on the server?)',
+    feedBadUrl: 'Enter an https address.', feedAdded: 'Integration added', feedOk: '{n} tasks · updated at {when}', feedNever: 'Not synced yet', feedError: 'Error: {msg}',
+    feedRemoveQ: 'Remove the integration with {name}?', feedRemoveText: 'Do you also want to delete the list with tasks from this integration, or keep it as a normal list?',
+    feedRemoveAll: 'Delete list too', feedRemoveKeep: 'Keep list',
+    feedsPhone: 'Tip: turn on Microsoft sync too, and these tasks show up on your phone in the Microsoft To Do app.'
   };
 
   const dicts = { nl, en };
